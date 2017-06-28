@@ -56,17 +56,6 @@ CMAKE_BINARY_DIR = /home/home/projects/dislocation
 #=============================================================================
 # Targets provided globally by CMake.
 
-# Special rule for the target install/strip
-install/strip: preinstall
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --cyan "Installing the project stripped..."
-	/home/home/clion/bin/cmake/bin/cmake -DCMAKE_INSTALL_DO_STRIP=1 -P cmake_install.cmake
-.PHONY : install/strip
-
-# Special rule for the target install/strip
-install/strip/fast: install/strip
-
-.PHONY : install/strip/fast
-
 # Special rule for the target install/local
 install/local: preinstall
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --cyan "Installing only the local directory..."
@@ -168,6 +157,19 @@ Tests/fast:
 .PHONY : Tests/fast
 
 #=============================================================================
+# Target rules for targets named ddisl
+
+# Build rule for target.
+ddisl: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 ddisl
+.PHONY : ddisl
+
+# fast build rule for target.
+ddisl/fast:
+	$(MAKE) -f CMakeFiles/ddisl.dir/build.make CMakeFiles/ddisl.dir/build
+.PHONY : ddisl/fast
+
+#=============================================================================
 # Target rules for targets named gmock_main
 
 # Build rule for target.
@@ -219,6 +221,33 @@ gtest/fast:
 	$(MAKE) -f lib/googletest/googlemock/gtest/CMakeFiles/gtest.dir/build.make lib/googletest/googlemock/gtest/CMakeFiles/gtest.dir/build
 .PHONY : gtest/fast
 
+ddisl.o: ddisl.cc.o
+
+.PHONY : ddisl.o
+
+# target to build an object file
+ddisl.cc.o:
+	$(MAKE) -f CMakeFiles/ddisl.dir/build.make CMakeFiles/ddisl.dir/ddisl.cc.o
+.PHONY : ddisl.cc.o
+
+ddisl.i: ddisl.cc.i
+
+.PHONY : ddisl.i
+
+# target to preprocess a source file
+ddisl.cc.i:
+	$(MAKE) -f CMakeFiles/ddisl.dir/build.make CMakeFiles/ddisl.dir/ddisl.cc.i
+.PHONY : ddisl.cc.i
+
+ddisl.s: ddisl.cc.s
+
+.PHONY : ddisl.s
+
+# target to generate assembly for a file
+ddisl.cc.s:
+	$(MAKE) -f CMakeFiles/ddisl.dir/build.make CMakeFiles/ddisl.dir/ddisl.cc.s
+.PHONY : ddisl.cc.s
+
 tests/tests.o: tests/tests.cpp.o
 
 .PHONY : tests/tests.o
@@ -252,17 +281,20 @@ help:
 	@echo "... all (the default if no target is provided)"
 	@echo "... clean"
 	@echo "... depend"
-	@echo "... install/strip"
 	@echo "... install/local"
 	@echo "... rebuild_cache"
 	@echo "... edit_cache"
 	@echo "... install"
 	@echo "... list_install_components"
 	@echo "... Tests"
+	@echo "... ddisl"
 	@echo "... gmock_main"
 	@echo "... gmock"
 	@echo "... gtest_main"
 	@echo "... gtest"
+	@echo "... ddisl.o"
+	@echo "... ddisl.i"
+	@echo "... ddisl.s"
 	@echo "... tests/tests.o"
 	@echo "... tests/tests.i"
 	@echo "... tests/tests.s"

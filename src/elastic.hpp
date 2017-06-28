@@ -17,12 +17,20 @@
 using namespace dealii;
 
 struct Elastic {
+    Elastic() : lambda(0), mu(0), poisson(0), shear(0), young(0) {}
+    Elastic(double lambda, double mu) : lambda(lambda), mu(mu) {
+        poisson = 0.5 * lambda / (lambda + mu);
+        shear = mu;
+        young = mu*(3*lambda+2*mu)/(lambda+mu);
+    }
     double lambda;
     double mu;
-    double nu;
+    double poisson;
+    double shear;
+    double young;
 };
 
-
+// Clockwise rotation matrix
 Tensor<2,2>
 get_rotation_matrix(double angle) {
 	const double t[2][2] = {{std::cos(angle), std::sin(angle)},

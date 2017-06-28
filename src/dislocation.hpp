@@ -5,29 +5,44 @@
 #include <deal.II/base/symmetric_tensor.h>
 #include <deal.II/lac/vector.h>
 #include "consts.h"
+#include "elastic.hpp"
 
 using namespace dealii;
 
+enum Sign {NEGATIVE = -1, POSITIVE = 1};
 
 //class for single dislocation
 template<int dim>
 class EdgeDislocation {
-	public:
-		EdgeDislocation() { coord = Point<dim>(); }
-		EdgeDislocation(const Point<dim>& p) : coord(p) {}
+public:
+    EdgeDislocation() {
+        coord = Point<dim>();
+        v = Vector<double>();
+        f = Vector<double>();
+        sign = POSITIVE;
+        angle = 0;
 
-	    SymmetricTensor<2,dim>
-	    get_stress(const Point<dim>& p,
-	    		   const double& lambda, const double& mu,
-	    		   const double& b
-	    		   );
+    }
 
-	    Tensor<1,dim>
-	    get_u(const Point<dim>& p,
-	    	  const double& lambda, const double& mu,
-	    	  const double& b);
-	private:
-	    Point<dim> coord;
+    EdgeDislocation(const Point<dim>& p, const Vector<double>& v, Sign sign, double angle)
+            : coord(p), v(v), sign(sign), angle(angle) {}
+
+    SymmetricTensor<2,dim>
+    getStress(const Point<dim> &p,
+              const Elastic &e);
+
+    Tensor<1,dim>
+    getU(const Point<dim> &p,
+         const Elastic &e);
+
+private:
+    Point<dim> coord;
+    Vector<double> v;
+    Vector<double> f;
+    Sign sign;
+    double angle;
+
+
 };
 
 #include "dislocation.cpp"

@@ -2,17 +2,10 @@
 // Created by home on 31.03.17.
 //
 
-#ifndef UNIAXIAL_ELASTICPROBLEMR_H
-#define UNIAXIAL_ELASTICPROBLEMR_H
+#ifndef ELASTIC_PROBLEM_H
+#define ELASTIC_PROBLEM_H
 
-//
-// Created by home on 31.03.17.
-//
-
-
-#include "ElasticProblem.h"
-
-using namespace DDisl;
+#include "ElasticProblem.hpp"
 
 // @sect4{ElasticProblem::ElasticProblem}
 template <int dim>
@@ -32,7 +25,7 @@ ElasticProblem<dim>::~ElasticProblem () {
 
 // @sect4{ElasticProblem::setup_system}
 template <int dim>
-void ElasticProblem<dim>::create_grid (double size, int n_refine) {
+void ElasticProblem<dim>::CreateGrid(double size, int n_refine) {
     GridGenerator::hyper_cube(triangulation, -size, size);
     std::cout << "Cube of [" << -size << ", " << size << "] is generated\n";
     std::cout << "Number of active cells: " <<
@@ -56,12 +49,50 @@ void ElasticProblem<dim>::create_grid (double size, int n_refine) {
 }
 
 template <int dim>
-void ElasticProblem<dim>::create_dislocation (const Point<dim>& p) {
-    dislocation = new EdgeDislocation<dim>(p);
+void ElasticProblem<dim>::CreateOneDislocation(const Point<dim> &p, const Vector<double> &v,
+                                               Sign sign, double angle) {
+    for (int k = 0; k < number_of_slip_systems; ++k) {
+        if (angle == slip_system_angles[k]) {
+            dislocations[k][slip_system_sizes[k]++] =
+                    EdgeDislocation<dim>(p, v, sign, angle);
+        }
+    }
 }
 
 template <int dim>
-void ElasticProblem<dim>::setup_system () {
+void ElasticProblem<dim>::CreateDislocations(const std::vector<std::pair<Point<dim>, Sign> >& points,
+                                             const std::vector<double>& angles)
+{
+    dislocations.resize(number_of_slip_systems);
+    //resize dislocations arrays by number of given data
+    // needs to be refactoring...
+    for (int k = 0; k < number_of_slip_systems; ++k) {
+        dislocations[k].resize(points.size());
+    }
+    slip_system_sizes.resize(number_of_slip_systems);
+    for (int i = 0; i < angles.size(); ++i) {
+        for (int k = 0; k < number_of_slip_systems; ++k) {
+            if (angles[i] == slip_system_angles[k]) {
+                dislocations[k][slip_system_sizes[k]++] =
+                        EdgeDislocation<dim>(points[i].first, Vector<double>(dim),
+                                             points[i].second, angles[i]);
+            }
+        }
+    }
+}
+
+template <int dim>
+void ElasticProblem<dim>::SetupSlipSystems(const std::vector<double>& angles) {
+    number_of_slip_systems = angles.size();
+    slip_system_angles = angles;
+    rotation_matrices.reserve(number_of_slip_systems);
+    for (int i = 0; i < number_of_slip_systems; ++i) {
+        rotation_matrices[i] = get_rotation_matrix(angles[i]);
+    }
+}
+
+template <int dim>
+void ElasticProblem<dim>::SetupSystem() {
     dof_handler.distribute_dofs (fe);
     hanging_node_constraints.clear ();
     DoFTools::make_hanging_node_constraints (dof_handler,
@@ -85,17 +116,16 @@ void ElasticProblem<dim>::setup_system () {
 }
 
 template <int dim>
-void ElasticProblem<dim>::setup_elastic (double Lambda, double Mu, double b) {
-    lambda = Lambda;
-    mu = Mu;
-    burgers = b;
-    stress_strain_tensor = get_stress_strain_tensor<dim>(Lambda, Mu);
+void ElasticProblem<dim>::SetupElasticProperties(double lambda, double mu) {
+    elastic = Elastic(lambda, mu);
+    stress_strain_tensor = get_stress_strain_tensor<dim>(lambda, mu);
 }
+
 
 // @sect4{ElasticProblem::assemble_system}
 
 template <int dim>
-void ElasticProblem<dim>::assemble_system_tensor () {
+void ElasticProblem<dim>::AssembleSystemTensor() {
 
     FEValues<dim> fe_values (fe, quadrature_formula,
                              update_values   | update_gradients |
@@ -114,14 +144,14 @@ void ElasticProblem<dim>::assemble_system_tensor () {
 
     std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
 
-    // burgers in
-    double burgers = 2.86*1e-10;
+
     std::vector<Vector<double> > rhs_values (n_q_points,
                                              Vector<double>(dim));
 
     // Now we can begin with the loop over all cells:
     typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
             endc = dof_handler.end();
+    std::cout << "Assembling right hand side\n";
     for (; cell!=endc; ++cell) {
         cell_matrix = 0;
         cell_rhs = 0;
@@ -144,8 +174,9 @@ void ElasticProblem<dim>::assemble_system_tensor () {
             }
         }
         Tensor<1,dim> force; force[0] = 0.0; force[1] = 0.0;
-        BoundaryValuesForce<dim> boundary_force(dislocation, force,
-                                                lambda, mu, burgers);
+        BoundaryValuesForce<dim> boundary_force(force, &elastic, &dislocations,
+                                                &slip_system_angles, &rotation_matrices);
+
         // Assembling the right hand side boundary terms
         for (unsigned int face_number=0;
              face_number<GeometryInfo<dim>::faces_per_cell; ++face_number)
@@ -158,6 +189,8 @@ void ElasticProblem<dim>::assemble_system_tensor () {
                 // quadrature
                 for(unsigned int q = 0; q < n_face_q_points; ++q)
                 {
+                    std::cout << fe_face_values.quadrature_point(q)[0] << ' ' <<
+                                 fe_face_values.quadrature_point(q)[1] << ' ';
                     boundary_force.force_value(
                             fe_face_values.quadrature_point(q),
                             neumann_vector_value,
@@ -165,8 +198,7 @@ void ElasticProblem<dim>::assemble_system_tensor () {
                     );
 
                     for (unsigned int i = 0; i < dofs_per_cell; ++i) {
-                        const unsigned int
-                                component_i = fe.system_to_component_index(i).first;
+                        const unsigned int component_i = fe.system_to_component_index(i).first;
                         cell_rhs(i) += neumann_vector_value[component_i] *
                                        fe_face_values.shape_value(i, q) *
                                        fe_face_values.JxW(q);
@@ -189,14 +221,13 @@ void ElasticProblem<dim>::assemble_system_tensor () {
     Tensor<1,dim> d; d[0] = 0.0; d[1] = 0.0;
     VectorTools::interpolate_boundary_values (dof_handler,
                                               1,
-                                              BoundaryValuesU<dim>(
-                                              dislocation, d, lambda, mu, burgers),
-                                              boundary_values);
+                                              BoundaryValuesU<dim>(d, &elastic, &dislocations,
+                                              &slip_system_angles, &rotation_matrices);
     VectorTools::interpolate_boundary_values (dof_handler,
                                               2,
                                               BoundaryValuesU<dim>(
-                                              dislocation, d, lambda, mu, burgers),
-                                              boundary_values);
+                                              d, &elastic, &dislocations,
+                                              &slip_system_angles, &rotation_matrices);
     MatrixTools::apply_boundary_values (boundary_values,
                                         system_matrix,
                                         solution,
@@ -204,7 +235,7 @@ void ElasticProblem<dim>::assemble_system_tensor () {
 }
 
 template <int dim>
-void ElasticProblem<dim>::assemble_system () {
+void ElasticProblem<dim>::AssembleSystem() {
     QGauss<dim>  quadrature_formula(3);
     QGauss<dim-1>  face_quadrature_formula(3);
 
@@ -225,7 +256,7 @@ void ElasticProblem<dim>::assemble_system () {
 
     std::vector<types::global_dof_index> local_dof_indices (dofs_per_cell);
 
-    // burgers in
+    // right hand side
     std::vector<Vector<double> > rhs_values (n_q_points,
                                              Vector<double>(dim));
 
@@ -251,16 +282,16 @@ void ElasticProblem<dim>::assemble_system () {
                             (
                                     (fe_values.shape_grad(i,q_point)[component_i] *
                                      fe_values.shape_grad(j,q_point)[component_j] *
-                                     lambda)
+                                     elastic.lambda)
                                     +
                                     (fe_values.shape_grad(i,q_point)[component_j] *
                                      fe_values.shape_grad(j,q_point)[component_i] *
-                                     mu)
+                                     elastic.mu)
                                     +
                                     ((component_i == component_j) ?
                                      (fe_values.shape_grad(i,q_point) *
                                       fe_values.shape_grad(j,q_point) *
-                                      mu)  :
+                                      elastic.mu)  :
                                      0)
                             )
                             *
@@ -269,12 +300,11 @@ void ElasticProblem<dim>::assemble_system () {
             }
         }
         Tensor<1,dim> force; force[0] = 0.0; force[1] = 0.0;
-        BoundaryValuesForce<dim> boundary_stress(dislocation, force,
-                                                 lambda, mu, burgers);
+        BoundaryValuesForce<dim> boundary_force(force, &elastic, &dislocations);
         // Assembling the right hand side boundary terms
         for (unsigned int face_number=0;
              face_number<GeometryInfo<dim>::faces_per_cell; ++face_number) {
-            Vector<double> neumann_vector_value;
+            Tensor<1, dim> neumann_vector_value;
             if (cell->face(face_number)->at_boundary() &&
                 cell->face(face_number)->boundary_id() == 0)
             {
@@ -283,10 +313,11 @@ void ElasticProblem<dim>::assemble_system () {
                 for(unsigned int q = 0; q < n_face_q_points; ++q)
                 {
 
-                    boundary_stress.get_force(
+                    boundary_force.force_value(
                             fe_face_values.quadrature_point(q),
-                            fe_face_values.normal_vector(q),
-                            neumann_vector_value);
+                            neumann_vector_value,
+                            fe_face_values.normal_vector(q)
+                            );
                     for (unsigned int i = 0; i < dofs_per_cell; ++i) {
                         const unsigned int
                                 component_i = fe.system_to_component_index(i).first;
@@ -317,13 +348,13 @@ void ElasticProblem<dim>::assemble_system () {
     VectorTools::interpolate_boundary_values (dof_handler,
                                               1,
                                               BoundaryValuesU<dim>(
-                                                      dislocation, d, lambda, mu, burgers)
+                                                      d, &elastic, &dislocations)
             ,
                                               boundary_values);
     VectorTools::interpolate_boundary_values (dof_handler,
                                               2,
                                               BoundaryValuesU<dim>(
-                                                      dislocation, d, lambda, mu, burgers),
+                                                      d, &elastic, &dislocations),
                                               boundary_values);
     MatrixTools::apply_boundary_values (boundary_values,
                                         system_matrix,
@@ -335,9 +366,9 @@ void ElasticProblem<dim>::assemble_system () {
 // @sect4{ElasticProblem::solve}
 
 template <int dim>
-void ElasticProblem<dim>::solve ()
+void ElasticProblem<dim>::Solve()
 {
-    SolverControl           solver_control (1000, 1e-12);
+    SolverControl           solver_control (50000, 1e-9);
     SolverCG<>              cg (solver_control);
 
     PreconditionSSOR<> preconditioner;
@@ -350,7 +381,7 @@ void ElasticProblem<dim>::solve ()
 }
 
 template <int dim>
-void ElasticProblem<dim>::add_dislocation_component_to_result () {
+void ElasticProblem<dim>::AddDislocationComponentToResult() {
     std::vector<bool> vector_touched(triangulation.n_vertices(), false);
 
     typename DoFHandler<dim>::active_cell_iterator
@@ -359,16 +390,27 @@ void ElasticProblem<dim>::add_dislocation_component_to_result () {
     for (; cell!=endc; ++cell) {
         for (unsigned int v=0; v<GeometryInfo<dim>::vertices_per_cell; ++v) {
             if (vector_touched[cell->vertex_index(v)] == false) {
-                const Tensor<1, dim> u_disl =
-                        dislocation->get_u(cell->vertex(v), lambda, mu, burgers);
-                /*std::cout << "(" << (cell->vertex(v))[0] << ", " \
-                        << (cell->vertex(v))[1] << ")" << '\n';
-                std::cout << u_disl[0] << ' ' << u_disl[1] << '\n';
-                std::cout << solution(cell->vertex_dof_index(v,0))  << ' ' <<
-                        solution(cell->vertex_dof_index(v,1)) << '\n';*/
+                // get displacements from dislocations each slip systems
+                std::vector<Tensor<1, dim> > u_disl(number_of_slip_systems);
+                for (int k = 0; k < number_of_slip_systems; ++k) {
+                    for (size_t i = 0; i < dislocations[k].size(); ++i) {
+                        u_disl[k] += dislocations[k][i].getU(cell->vertex(v), elastic);
+                    }
+                }
+
+                for (int k = 0; k < number_of_slip_systems; ++k) {
+                    for (unsigned int d = 0; d < dim; ++d) {
+                        if (abs(slip_system_angles[k] - 0.0) < ERROR) {
+                            dislocation_solution(cell->vertex_dof_index(v, d)) += u_disl[k][d];
+                        } else {
+                            dislocation_solution(cell->vertex_dof_index(v, d)) +=
+                                    (u_disl[k] * transpose(rotation_matrices[k]))[d];
+                        }
+                    }
+                }
+
+
                 for (unsigned int d = 0; d < dim; ++d) {
-                    dislocation_solution(cell->vertex_dof_index(v,d)) =
-                            u_disl[d];
                     overall_solution(cell->vertex_dof_index(v,d)) =
                             dislocation_solution(cell->vertex_dof_index(v,d)) +
                             image_solution(cell->vertex_dof_index(v,d));
@@ -384,7 +426,7 @@ void ElasticProblem<dim>::add_dislocation_component_to_result () {
 // @sect4{ElasticProblem::refine_grid}
 
 template <int dim>
-void ElasticProblem<dim>::refine_grid ()
+void ElasticProblem<dim>::RefineGrid()
 {
     Vector<float> estimated_error_per_cell (triangulation.n_active_cells());
 
@@ -405,7 +447,7 @@ void ElasticProblem<dim>::refine_grid ()
 // @sect4{ElasticProblem::output_results}
 
 template <int dim>
-void ElasticProblem<dim>::output_results (const unsigned int cycle) const
+void ElasticProblem<dim>::OutputResults(const unsigned int cycle) const
 {
     std::string filename = "solution-";
     filename += ('0' + cycle);
@@ -437,65 +479,87 @@ void ElasticProblem<dim>::output_results (const unsigned int cycle) const
             Assert (false, ExcNotImplemented());
     }
 
-    data_out.add_data_vector (image_solution, solution_names);
-    Vector<double> stress12(triangulation.n_active_cells());
-    Vector<double> stress11(triangulation.n_active_cells());
-    Vector<double> stress22(triangulation.n_active_cells());
-    Vector<double> strain12(triangulation.n_active_cells());
+    data_out.add_data_vector (overall_solution, solution_names);
+    Vector<double> image_stress11(triangulation.n_active_cells());
+    Vector<double> image_stress12(triangulation.n_active_cells());
+    Vector<double> image_stress22(triangulation.n_active_cells());
+    Vector<double> disl_stress11(triangulation.n_active_cells());
+    Vector<double> disl_stress12(triangulation.n_active_cells());
+    Vector<double> disl_stress22(triangulation.n_active_cells());
+    Vector<double> full_stress11(triangulation.n_active_cells());
+    Vector<double> full_stress12(triangulation.n_active_cells());
+    Vector<double> full_stress22(triangulation.n_active_cells());
     Vector<double> strain11(triangulation.n_active_cells());
+    Vector<double> strain12(triangulation.n_active_cells());
     Vector<double> strain22(triangulation.n_active_cells());
-    Vector<double> ux(triangulation.n_active_cells());
-    Vector<double> uy(triangulation.n_active_cells());
+
     for (typename Triangulation<dim>::active_cell_iterator
                  cell = triangulation.begin_active();
          cell != triangulation.end(); ++cell) {
-        SymmetricTensor<2, dim> accumulated_stress;
+        SymmetricTensor<2, dim> accumulated_disl_stress;
+        SymmetricTensor<2, dim> accumulated_image_stress;
+        SymmetricTensor<2, dim> accumulated_full_stress;
         SymmetricTensor<2, dim> accumulated_strain;
-        Tensor<1, dim> accumulated_disl_disp;
         for (int q = 0; q < quadrature_formula.size(); ++q) {
-            accumulated_stress +=
+            accumulated_disl_stress +=
                     reinterpret_cast<UserData<dim> *>
-                    (cell->user_pointer())[q].quadrature_stress;
+                    (cell->user_pointer())[q].dislocation_stress;
+            accumulated_image_stress +=
+                    reinterpret_cast<UserData<dim> *>
+                    (cell->user_pointer())[q].image_stress;
+            accumulated_full_stress +=
+                    reinterpret_cast<UserData<dim> *>
+                    (cell->user_pointer())[q].full_stress;
             accumulated_strain +=
                     reinterpret_cast<UserData<dim> *>
-                    (cell->user_pointer())[q].quadrature_strain;
-            accumulated_disl_disp +=
-                    reinterpret_cast<UserData<dim> *>
-                    (cell->user_pointer())[q].quadrature_disl_displ;
+                    (cell->user_pointer())[q].strain;
         }
-        stress11(cell->active_cell_index()) =
-                (accumulated_stress / quadrature_formula.size())[0][0];
-        stress12(cell->active_cell_index()) =
-                (accumulated_stress / quadrature_formula.size())[0][1];
-        stress22(cell->active_cell_index()) =
-                (accumulated_stress / quadrature_formula.size())[1][1];
+        image_stress11(cell->active_cell_index()) =
+                (accumulated_image_stress / quadrature_formula.size())[0][0];
+        image_stress12(cell->active_cell_index()) =
+                (accumulated_image_stress / quadrature_formula.size())[0][1];
+        image_stress22(cell->active_cell_index()) =
+                (accumulated_image_stress / quadrature_formula.size())[1][1];
+        disl_stress11(cell->active_cell_index()) =
+                (accumulated_disl_stress / quadrature_formula.size())[0][0];
+        disl_stress12(cell->active_cell_index()) =
+                (accumulated_disl_stress / quadrature_formula.size())[0][1];
+        disl_stress22(cell->active_cell_index()) =
+                (accumulated_disl_stress / quadrature_formula.size())[1][1];
+        full_stress11(cell->active_cell_index()) =
+                (accumulated_full_stress / quadrature_formula.size())[0][0];
+        full_stress12(cell->active_cell_index()) =
+                (accumulated_full_stress / quadrature_formula.size())[0][1];
+        full_stress22(cell->active_cell_index()) =
+                (accumulated_full_stress / quadrature_formula.size())[1][1];
         strain11(cell->active_cell_index()) =
                 (accumulated_strain / quadrature_formula.size())[0][0];
         strain12(cell->active_cell_index()) =
                 (accumulated_strain / quadrature_formula.size())[0][1];
         strain22(cell->active_cell_index()) =
                 (accumulated_strain / quadrature_formula.size())[1][1];
-        ux(cell->active_cell_index()) =
-                (accumulated_disl_disp / quadrature_formula.size())[0];
-        uy(cell->active_cell_index()) =
-                (accumulated_disl_disp / quadrature_formula.size())[1];
+
 
     }
-    data_out.add_data_vector (stress11, "sigma_11");
-    data_out.add_data_vector (stress12, "sigma_12");
-    data_out.add_data_vector (stress22, "sigma_22");
+    data_out.add_data_vector (image_stress11, "image_sigma_11");
+    data_out.add_data_vector (image_stress12, "image_sigma_12");
+    data_out.add_data_vector (image_stress22, "image_sigma_22");
+    data_out.add_data_vector (disl_stress11, "disl_sigma_11");
+    data_out.add_data_vector (disl_stress12, "disl_sigma_12");
+    data_out.add_data_vector (disl_stress22, "disl_sigma_22");
+    data_out.add_data_vector (full_stress11, "full_sigma_11");
+    data_out.add_data_vector (full_stress12, "full_sigma_12");
+    data_out.add_data_vector (full_stress22, "full_sigma_22");
     data_out.add_data_vector (strain11, "strain_11");
     data_out.add_data_vector (strain12, "strain_12");
     data_out.add_data_vector (strain22, "strain_22");
-    data_out.add_data_vector (ux, "ux_disl");
-    data_out.add_data_vector (uy, "uy_disl");
 
     data_out.build_patches ();
     data_out.write_vtk (output);
 }
 
 template <int dim>
-void ElasticProblem<dim>::setup_quadrature_user_data() {
+void ElasticProblem<dim>::SetupQuadratureUserData() {
     unsigned int n_cells = triangulation.n_active_cells();
     triangulation.clear_user_data();
     quadrature_user_data.resize(n_cells * quadrature_formula.size());
@@ -513,12 +577,12 @@ void ElasticProblem<dim>::setup_quadrature_user_data() {
 
 
 template <int dim>
-void ElasticProblem<dim>::update_user_data() {
+void ElasticProblem<dim>::UpdateUserData() {
     FEValues<dim> fe_values(fe, quadrature_formula,
                             update_quadrature_points | update_values | update_gradients);
     std::vector< std::vector<Tensor<1, dim> > >
-                                       image_displacement_grads(quadrature_formula.size(),
-                                                                std::vector<Tensor<1, dim> >(dim)),
+            image_displacement_grads(quadrature_formula.size(),
+                                       std::vector<Tensor<1, dim> >(dim)),
             overall_displacement_grads(quadrature_formula.size(),
                                        std::vector<Tensor<1, dim> >(dim));
 
@@ -538,48 +602,118 @@ void ElasticProblem<dim>::update_user_data() {
                                          image_displacement_grads);
         fe_values.get_function_gradients(overall_solution,
                                          overall_displacement_grads);
+
         for (int q = 0; q < quadrature_formula.size(); ++q) {
-            //stress
-            local_user_data[q].quadrature_stress =
-                    /*stress_strain_tensor * get_strain(image_displacement_grads[q]);*/
-                    dislocation->get_stress(fe_values.quadrature_point(q),
-                                            lambda, mu, burgers);
-            //dislocation displacement
-            local_user_data[q].quadrature_disl_displ =
-                    dislocation->get_u(fe_values.quadrature_point(q), lambda, mu, burgers);
+            // Stress due to dislocations
+            std::vector<SymmetricTensor<2,dim> > stress_from_dislocations(number_of_slip_systems);
+            for (int k = 0; k < number_of_slip_systems; ++k) {
+                for (size_t i = 0; i < dislocations[k].size(); ++i) {
+                    stress_from_dislocations[k] += dislocations[k][i].getStress
+                            (fe_values.quadrature_point(q), elastic);
+                }
+            }
+
+            for (int k = 0; k < number_of_slip_systems; ++k) {
+                if (abs(slip_system_angles[k] - 0.0) < ERROR) {
+                    local_user_data[q].dislocation_stress += stress_from_dislocations[k];
+                }
+                else {
+                    local_user_data[q].dislocation_stress +=
+                             symmetrize(rotation_matrices[k]*
+                             static_cast<Tensor<2, dim> >(stress_from_dislocations[k])*
+                             transpose(rotation_matrices[k]));
+                }
+            }
+
+            // Image stress
+            local_user_data[q].image_stress =
+                    stress_strain_tensor * get_strain(image_displacement_grads[q]);
+
+            // Full stress
+            local_user_data[q].full_stress = local_user_data[q].image_stress +
+                                             local_user_data[q].dislocation_stress;
+
             //overall strain
-            local_user_data[q].quadrature_strain =
-                    get_strain(image_displacement_grads[q]);
+            local_user_data[q].strain =
+                    get_strain(overall_displacement_grads[q]);
         }
     }
 
 }
 
 template <int dim>
-void ElasticProblem<dim>::run ()
+void ElasticProblem<dim>::ComputeBoundaryForceSolution() {
+    FEFaceValues<dim> fe_face_values (fe, face_quadrature_formula,
+                                      update_values   | update_normal_vectors |
+                                      update_quadrature_points | update_JxW_values);
+    const unsigned int   n_face_q_points = face_quadrature_formula.size();
+    // loop over all cells:
+    typename DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
+            endc = dof_handler.end();
+    for (; cell!=endc; ++cell) {
+        for (unsigned int face_number = 0;
+             face_number < GeometryInfo<dim>::faces_per_cell; ++face_number) {
+            if (cell->face(face_number)->at_boundary() &&
+                cell->face(face_number)->boundary_id() == 0) {
+
+                UserData<dim>* local_user_data =
+                        reinterpret_cast<UserData<dim>* >(cell->user_pointer());
+                fe_face_values.reinit(cell, face_number);
+                // quadrature
+                for(unsigned int q = 0; q < n_face_q_points; ++q) {
+                    Tensor<1, dim> frc = local_user_data[q].full_stress*
+                                       fe_face_values.normal_vector(q);
+                    force_at_boundary_solution.push_back(
+                            std::make_pair(fe_face_values.quadrature_point(q), frc));
+                }
+            }
+        }
+    }
+}
+
+template <int dim>
+void ElasticProblem<dim>::Run()
 {
-    create_grid(1e-8, 7);
-    create_dislocation(Point<dim>(0.0, 0.0));
+    using namespace std;
+    CreateGrid(1e-6, 6);
+    const vector<double> slip_angles = {0.0};
+    SetupSlipSystems(slip_angles);
+    double dist = 200*burgers;
+    vector<pair<Point<dim>, Sign> > points = {{Point<dim>(0, -2*dist), POSITIVE},
+                                         {Point<dim>(0, -dist), POSITIVE},
+                                         {Point<dim>(0, 0), POSITIVE},
+                                         {Point<dim>(0, dist), POSITIVE},
+                                         {Point<dim>(0, 2*dist), POSITIVE}};
+    vector<double> angles = {0.0, 0.0, 0.0, 0.0, 0.0};
+    CreateDislocations(points, angles);
     std::cout << "   Number of active cells:       "
               << triangulation.n_active_cells()
               << std::endl;
 
-    setup_system ();
-    setup_elastic (/*lambda*/ 60*1e9, /*mu*/ 27*1e9, 2.86*1e-10);
-    setup_quadrature_user_data();
+    SetupSystem();
+    SetupElasticProperties (/*lambda*/ 60*1e9, /*mu*/ 27*1e9);
+    SetupQuadratureUserData();
 
     std::cout << "   Number of degrees of freedom: "
               << dof_handler.n_dofs()
               << std::endl;
 
-    assemble_system_tensor ();
-    solve ();
-    add_dislocation_component_to_result();
-    update_user_data();
-    output_results (0);
+    AssembleSystemTensor();
+    Solve();
+    AddDislocationComponentToResult();
+    UpdateUserData();
+    ComputeBoundaryForceSolution();
+    std::cout << "\nPrint forces after calculations\n";
+    for (int i = 0; i < force_at_boundary_solution.size(); ++i) {
+        std::cout << force_at_boundary_solution[i].first[0] << ' ' <<
+                  force_at_boundary_solution[i].first[1] << ' ';
+        std::cout << force_at_boundary_solution[i].second[0] << ' ' <<
+                     force_at_boundary_solution[i].second[1] << '\n';
+    }
+    OutputResults(0);
 }
 
 
 
 
-#endif //UNIAXIAL_ELASTICPROBLEMR_H
+#endif //ELASTIC_PROBLEM_H
