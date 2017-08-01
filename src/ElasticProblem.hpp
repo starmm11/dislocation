@@ -64,11 +64,14 @@ public:
     ~ElasticProblem();
     void Run();
 
+    friend class BoundaryValuesForce<dim>;
+    friend class BoundaryValuesU<dim>;
 private:
     void CreateGrid(double size, int n_refine);
     void CreateOneDislocation(const Point<dim> &p, const Vector<double> &v,
                               Sign sign, double angle);
-    void CreateDislocations(const std::vector<std::pair<Point<dim>, Sign> >& points,
+    void CreateDislocations(const std::vector<Point<dim> >& points,
+                            const std::vector<Sign>& signs,
                             const std::vector<double>& angles);
     void SetupSystem();
     void SetupSlipSystems(const std::vector<double>& angles);
@@ -102,13 +105,12 @@ private:
     SparsityPattern sparsity_pattern;
     SparseMatrix<double> system_matrix;
     QGauss<dim> quadrature_formula;
-    QGauss<dim - 1> face_quadrature_formula;
+    QGauss<dim-1> face_quadrature_formula;
 
     // Boundary class
-    friend class BoundaryValuesForce<dim> boundary_force_condition;
+    BoundaryValuesForce<dim> boundary_force_condition;
     Tensor<1, dim> boundary_force;
-
-    friend class BoundaryValuesU<dim> boundary_u_condition;
+    BoundaryValuesU<dim> boundary_u_condition;
     Tensor<1, dim> boundary_displacement;
 
     // Solution data

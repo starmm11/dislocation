@@ -11,6 +11,7 @@
 
 
 #include "elastic.hpp"
+#include "dislocation.hpp"
 #include "consts.h"
 
 using namespace dealii;
@@ -27,14 +28,19 @@ struct VectorRotateData {
 class TestTranspose : public ::testing::TestWithParam<VectorRotateData> {
 };
 
-TEST_P(TestTranspose, SimpleTest) {
-    const VectorRotateData& p = GetParam();
-    Tensor<1, 2> check;
-    check[0] = p.xs; check[1] = p.ys;
-    Tensor<2, 2> rotation = get_rotation_matrix(p.angle*PI_180);
-    Tensor<1, 2> res = check*transpose(rotation);
-    EXPECT_NEAR(p.xr, res[0], ERROR);
-    EXPECT_NEAR(p.yr, res[1], ERROR);
+
+TEST(TestEdgeStress, SimpleTest) {
+    vector<EdgeDislocation<2> > disl;
+    Elastic elastic(/*lambda*/ 60*1e9, /*mu*/ 27*1e9);
+    disl.push_back(EdgeDislocation<2>(Point<2>(0, 1e-5), Vector<double>(2), POSITIVE, 0.0));
+    disl.push_back(EdgeDislocation<2>(Point<2>(0, -1e-5), Vector<double>(2), NEGATIVE, 0.0));
+    Point<2> p = Point<2>(0, 0);
+    Tensor<1,2>  pp1 = p - disl[0].coord;
+    Tensor<1,2>  pp2 = p - disl[1].coord;
+    SymmetricTensor<2,2> str1 = disl[0].getStress(p, elastic);
+    SymmetricTensor<2,2> str2 = disl[1].getStress(p, elastic);
+    ASSERT_FLOAT_EQ(str1[1][1], -str2[1][1]);
+    ASSERT_FLOAT_EQ(str1[0][0], -str2[0][0]);
 }
 
 class Generator {

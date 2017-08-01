@@ -10,14 +10,26 @@ EdgeDislocation<dim>::getStress(const Point<dim> &p,
     static const double emult = e.mu*burgers*0.5*PI_i/(1 - e.poisson);
     double mult = sign*emult;
     Tensor<1,dim>  pp = p - coord;
-    std::cout << std::setprecision(8);
 
-    double square_2i = 1.0 / (pp.norm_square() * pp.norm_square());
+    // stress without regularization
+    /*double square_i = 1.0 / (pp[0]*pp[0]+pp[1]*pp[1]);
+    double square_2i = square_i * square_i;
     tmp[0][0] = -mult * square_2i * pp[1] * (3.0*pp[0]*pp[0] + pp[1]*pp[1]);
     tmp[1][1] = mult * square_2i * pp[1] * (pp[0]*pp[0] - pp[1]*pp[1]);
     tmp[0][1] = mult * square_2i * pp[0] * (pp[0]*pp[0] - pp[1]*pp[1]);
     tmp[1][0] = tmp[0][1];
-    //std::cout << "Stress " << tmp[0][0] << ' ' << tmp[1][1] << ' ' << pp[0] << ' ' << pp[1] << '\n';
+    */
+
+    // stress with regularization W. Cai
+    double a_2 = core_width*core_width;
+    double pp0_2 = pp[0]*pp[0];
+    double pp1_2 = pp[1]*pp[1];
+    double square_i = 1.0 / (pp0_2 + pp1_2 + a_2);
+
+    tmp[0][0] = -mult * square_i * pp[1] * (1+2.0*(pp0_2 + a_2)*square_i);
+    tmp[1][1] = mult * square_i * pp[1] * (1-2.0*(pp1_2 + a_2)*square_i);
+    tmp[0][1] = mult * square_i * pp[0] * (1-2.0*pp1_2*square_i);
+    tmp[1][0] = tmp[0][1];
     return tmp;
 }
 
@@ -35,13 +47,12 @@ EdgeDislocation<dim>::getU(const Point<dim> &p,
         tmp[0] = 0; tmp[1] = 0;
         return tmp;
     }
-    std::cout << std::setprecision(8);
 
     double square_i = 1.0 / (pp[0]*pp[0]+pp[1]*pp[1]);
     tmp[0] = mult*(0.5*pp[0]*pp[1]*square_i
                               +(1-e.poisson)*std::atan(pp[1]/pp[0]));
-    tmp[1] = mult*(0.25*square_i*(pp[1]*pp[1]-p[0]*p[0])-
-                              0.25*(1-2.0*e.poisson)*std::log((pp[0]*pp[0]+pp[1]*pp[1])));
-    //std::cout << "U " << tmp[0] << ' ' << tmp[1] << ' ' << pp[0] << ' ' << pp[1] << '\n';
+    tmp[1] = -0.25*mult*(square_i*(pp[0]*pp[0]-p[1]*p[1])+
+                              (1-2.0*e.poisson)*std::log((pp[0]*pp[0]+pp[1]*pp[1])));
+
     return tmp;
 }

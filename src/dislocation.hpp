@@ -35,14 +35,12 @@ public:
     getU(const Point<dim> &p,
          const Elastic &e);
 
-private:
+//private:
     Point<dim> coord;
     Vector<double> v;
     Vector<double> f;
     Sign sign;
     double angle;
-
-
 };
 
 #include "dislocation.cpp"
