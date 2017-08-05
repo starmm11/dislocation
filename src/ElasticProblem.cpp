@@ -131,6 +131,7 @@ void ElasticProblem<dim>::SetupBoundaryConditions(const Tensor<1, dim>& force,
     boundary_force = force;
     boundary_displacement = displacement;
 }
+
 // @sect4{ElasticProblem::assemble_system}
 
 template <int dim>
@@ -366,7 +367,7 @@ void ElasticProblem<dim>::AssembleSystem() {
 template <int dim>
 void ElasticProblem<dim>::Solve()
 {
-    SolverControl           solver_control (50000, 1e-6);
+    SolverControl solver_control(50000, 1e-8);
     SolverCG<>              cg (solver_control);
 
     PreconditionSSOR<> preconditioner;
@@ -668,16 +669,23 @@ void ElasticProblem<dim>::ComputeBoundaryForceSolution() {
     }
 }
 
+template<int dim>
+void ElasticProblem<dim>::SaveBoundaryForce(std::ostream &out) const {
+    for (auto force: force_at_boundary_solution) {
+        out << force.first << ' ' << force.second << '\n';
+    }
+}
+
 template <int dim>
 void ElasticProblem<dim>::Run()
 {
     using namespace std;
-    CreateGrid(1e-5, 6);
+    CreateGrid(1e-5, 7);
     Tensor<1, dim> force; Tensor<1, dim> u;
     force[0] = 0.0; force[1] = 0.0;
     u[0] = 0.0; u[1] = 0.0;
     SetupBoundaryConditions(force, u);
-    const vector<double> slip_angles = {0.0};
+    const vector<double> slip_angles = {PI_180 * 60.0};
     SetupSlipSystems(slip_angles);
     double dist = 2000*burgers;
     /*vector<pair<Point<dim>, Sign> > points = {{Point<dim>(0, -2*dist), POSITIVE},
@@ -686,9 +694,9 @@ void ElasticProblem<dim>::Run()
                                          {Point<dim>(0, dist), POSITIVE},
                                          {Point<dim>(0, 2*dist), POSITIVE}};
                                          */
-    vector<Point<dim> > points = {Point<dim>(0, 5.0e-6), Point<dim>(0, -5.0e-6)};
+    vector<Point<dim> > points = {Point<dim>(0.0, 5.01e-6), Point<dim>(0.0, -5.01e-6)};
     vector<Sign> signs = {POSITIVE, NEGATIVE};
-    vector<double> angles = {0.0, 0.0};
+    vector<double> angles = {PI_180 * 60.0, PI_180 * 60.0};
 
     CreateDislocations(points, signs, angles);
 
@@ -710,11 +718,16 @@ void ElasticProblem<dim>::Run()
               << std::endl;
 
     AssembleSystemTensor();
+    ofstream file1("boundary_force_from_dislocations.txt");
+    // from AssembleSystemTensor()
+    SaveBoundaryForce(file1);
+    force_at_boundary_solution.clear();
     Solve();
     AddDislocationComponentToResult();
     UpdateUserData();
-    //ComputeBoundaryForceSolution();
-
+    ComputeBoundaryForceSolution();
+    ofstream file2("boundary_force_after.txt");
+    SaveBoundaryForce(file2);
     OutputResults(0);
 }
 

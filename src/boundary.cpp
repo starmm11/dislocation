@@ -98,6 +98,10 @@ BoundaryValuesForce<dim>::force_value(const Point<dim> &p,
     }
 
     force_from_dislocations = overall_stress_from_dislocations * normal;
+
+    // save value to vector
+    ep->force_at_boundary_solution.push_back(std::make_pair(p, force_from_dislocations));
+
     value[0] = ep->boundary_force[0] - force_from_dislocations[0];
     value[1] = ep->boundary_force[1] - force_from_dislocations[1];
 }

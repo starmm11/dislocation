@@ -35,7 +35,7 @@ public:
     getU(const Point<dim> &p,
          const Elastic &e);
 
-//private:
+private:
     Point<dim> coord;
     Vector<double> v;
     Vector<double> f;

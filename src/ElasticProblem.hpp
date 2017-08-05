@@ -90,6 +90,7 @@ private:
     void OutputResults(const unsigned int cycle) const;
     void ComputeBoundaryForceSolution();
 
+    void SaveBoundaryForce(std::ostream &out) const;
     //Dislocation motion functions
     //Waiting for realization!!
     void ComputeStresses();

@@ -9,6 +9,7 @@
 #define BOUNDARY_HPP_
 
 #include <vector>
+#include <utility>
 
 #include <deal.II/base/function.h>
 #include <deal.II/base/tensor_function.h>

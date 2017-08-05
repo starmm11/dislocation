@@ -35,8 +35,6 @@ TEST(TestEdgeStress, SimpleTest) {
     disl.push_back(EdgeDislocation<2>(Point<2>(0, 1e-5), Vector<double>(2), POSITIVE, 0.0));
     disl.push_back(EdgeDislocation<2>(Point<2>(0, -1e-5), Vector<double>(2), NEGATIVE, 0.0));
     Point<2> p = Point<2>(0, 0);
-    Tensor<1,2>  pp1 = p - disl[0].coord;
-    Tensor<1,2>  pp2 = p - disl[1].coord;
     SymmetricTensor<2,2> str1 = disl[0].getStress(p, elastic);
     SymmetricTensor<2,2> str2 = disl[1].getStress(p, elastic);
     ASSERT_FLOAT_EQ(str1[1][1], -str2[1][1]);
